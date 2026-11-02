@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Journal</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--tx:#111;--mute:#6b7690;--bd:#e3e8f0;--win:#117a57;--winbg:#e4f5ee;--loss:#c23b3b;--lossbg:#fbe9e9;--blue:#2f5bea;--bluebg:#e6f0ff}
+@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--card:#161b22;--tx:#eee;--mute:#8b96ab;--bd:#2a3140;--win:#3fcf9b;--winbg:#12392c;--loss:#ff7b7b;--lossbg:#3d1c1c;--blue:#7da2ff;--bluebg:#1a2a52}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--tx);padding-bottom:40px}
+.w{max-width:560px;margin:auto;padding:12px}
+.card{background:var(--card);border-radius:12px;padding:12px;margin-bottom:10px}
+.row{display:flex;gap:8px;align-items:center}.row>*{flex:1;min-width:0}
+.mute{color:var(--mute);font-size:12px}.win{color:var(--win)}.loss{color:var(--loss)}.b{font-weight:700}
+button{font:inherit;border:0;border-radius:8px;padding:10px 14px;background:var(--blue);color:#fff;cursor:pointer}
+button.o{background:transparent;color:var(--blue);border:1px solid var(--bd)}
+button.t{background:none;color:var(--blue);padding:6px 8px}
+input,textarea,select{width:100%;font:inherit;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx);margin-bottom:8px}
+.top{display:flex;align-items:center;background:var(--card);padding:8px 16px}.top>div{flex:1}
+.st b{display:block;font-size:18px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal .h{text-align:center;color:var(--mute);font-size:12px}
+.c{height:48px;border:1px solid var(--bd);border-radius:8px;padding:3px 4px;position:relative;font-size:11px;color:var(--mute);cursor:pointer}
+.c.s{border:2px solid var(--blue)}.c.w{background:var(--winbg)}.c.l{background:var(--lossbg)}
+.c i{position:absolute;right:4px;top:3px;color:var(--blue);font-style:normal;font-weight:700;font-size:10px}
+.c u{position:absolute;right:4px;bottom:3px;text-decoration:none;font-weight:700}
+.hl{border-radius:8px;padding:10px;margin-top:6px;font-size:14px}
+.hl b{display:block;font-size:13px}
+.imgs{display:flex;gap:8px;overflow-x:auto;margin-top:6px}.imgs img{width:90px;height:90px;object-fit:cover;border-radius:8px}
+.chips{display:flex;gap:8px;margin-bottom:8px}.chips button{flex:1;background:transparent;color:var(--tx);border:1px solid var(--bd)}.chips button.on{background:var(--blue);color:#fff}
+#ov{position:fixed;inset:0;background:var(--bg);overflow:auto;padding:16px;display:none;z-index:5}
+#zoom{position:fixed;inset:0;background:#000d;display:none;align-items:center;justify-content:center;z-index:9}#zoom img{max-width:100%;max-height:100%}
+</style></head><body>
+<div id="app"></div>
+<div id="ov"></div>
+<div id="zoom" onclick="this.style.display='none'"><img></div>
+<input type="file" id="rf" accept=".json" hidden>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money=d=>(d<0?'-':'')+'$'+Math.abs(d).toFixed(2);
+const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v);return true}catch(e){alert('Storage full! Delete some screenshots or take a backup.');return false}}};
+const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const CFG={apiKey:"PASTE_API_KEY",authDomain:"PASTE_AUTH_DOMAIN",projectId:"PASTE_PROJECT_ID",appId:"PASTE_APP_ID"};
+const CONFIGURED=!CFG.apiKey.startsWith('PASTE');
+let U=null,UID=null,T=[],M=new Date(),SEL=iso(new Date()),F=null,unsub=null,db,au;M.setDate(1);
+if(CONFIGURED){firebase.initializeApp(CFG);au=firebase.auth();db=firebase.firestore();db.enablePersistence({synchronizeTabs:true}).catch(()=>{})}
+const pnl=t=>t.after-t.before;
+const col=()=>db.collection('users').doc(UID).collection('trades');
+
+function auth(reg,err=''){
+ if(!CONFIGURED)return $('#app').innerHTML='<div class="w" style="padding-top:10vh"><h3>Setup needed</h3><p>Firebase config is missing in index.html. Paste your firebaseConfig values at the top of the script.</p></div>';
+ $('#app').innerHTML=`<div class="w" style="padding-top:15vh"><h2>Trading Journal</h2><p class="mute">${reg?'Create your account':'Log in to continue'}</p>
+ <input id="u" placeholder="Username" autocapitalize="off"><input id="p" type="password" placeholder="Password (min 6 characters)">
+ <p class="loss">${err}</p><button style="width:100%" onclick="go(${reg})">${reg?'Create account':'Log in'}</button>
+ <button class="t" onclick="auth(${!reg})">${reg?'I already have an account':'Create new account'}</button></div>`}
+async function go(reg){
+ const n=$('#u').value.trim().toLowerCase(),p=$('#p').value;
+ if(!/^[a-z0-9._-]{3,}$/.test(n))return auth(reg,'Username: min 3 characters, only letters, numbers, . _ -');
+ if(p.length<6)return auth(reg,'Password must be at least 6 characters');
+ try{reg?await au.createUserWithEmailAndPassword(n+'@tjournal.app',p):await au.signInWithEmailAndPassword(n+'@tjournal.app',p)}
+ catch(e){const m={'auth/email-already-in-use':'This username already exists','auth/user-not-found':'No account found with this username','auth/wrong-password':'Wrong password','auth/invalid-credential':'Wrong username or password','auth/network-request-failed':'No internet connection'};auth(reg,m[e.code]||e.message)}}
+function start(){
+ if(!CONFIGURED)return auth(1);
+ $('#app').innerHTML='<p class="mute" style="padding:30px">Loading…</p>';
+ au.onAuthStateChanged(u=>{if(unsub){unsub();unsub=null}
+  if(!u){U=UID=null;T=[];return auth(false)}
+  UID=u.uid;U=u.email.split('@')[0];
+  unsub=col().onSnapshot(s=>{T=s.docs.map(d=>({shots:[],...d.data(),id:d.id}));home()},e=>alert('Sync error: '+e.message))})}
+function logout(){au.signOut()}
+
+function home(){
+ const ym=iso(M).slice(0,7),mt=T.filter(t=>t.date.startsWith(ym)),tot=mt.reduce((a,t)=>a+pnl(t),0),w=mt.filter(t=>pnl(t)>0).length;
+ const by={},cnt={};T.forEach(t=>{by[t.date]=(by[t.date]||0)+pnl(t);cnt[t.date]=(cnt[t.date]||0)+1});
+ const day=T.filter(t=>t.date===SEL),dp=day.reduce((a,t)=>a+pnl(t),0);
+ let cells='',first=M.getDay(),len=new Date(M.getFullYear(),M.getMonth()+1,0).getDate();
+ for(let i=0;i<first;i++)cells+='<div></div>';
+ for(let d=1;d<=len;d++){const k=ym+'-'+String(d).padStart(2,'0'),p=by[k];
+  cells+=`<div class="c ${k===SEL?'s':''} ${p>0?'w':p<0?'l':''}" onclick="SEL='${k}';home()">${d}${cnt[k]?`<i>×${cnt[k]}</i>`:''}${p!=null?`<u class="${p>=0?'win':'loss'}">${p>=0?'+':''}${p.toFixed(0)}</u>`:''}</div>`}
+ $('#app').innerHTML=`<div class="top"><div><b>Trading Journal</b><div class="mute">Signed in as ${E(U)}</div></div>
+ <button class="t" onclick="backup()">Backup</button><button class="t" onclick="$('#rf').click()">Restore</button><button class="t" onclick="logout()">Logout</button></div>
+ <div class="w"><div class="row">
+ <div class="card st"><span class="mute">Monthly P&amp;L</span><b class="${tot>=0?'win':'loss'}">${money(tot)}</b></div>
+ <div class="card st"><span class="mute">Trades</span><b>${mt.length}</b></div>
+ <div class="card st"><span class="mute">Win rate</span><b>${mt.length?Math.floor(w*100/mt.length):0}%</b></div></div>
+ <div class="card"><div class="row"><button class="t" onclick="M.setMonth(M.getMonth()-1);home()">‹</button><b style="text-align:center">${M.toLocaleString('en',{month:'long'})} ${M.getFullYear()}</b><button class="t" onclick="M.setMonth(M.getMonth()+1);home()">›</button></div>
+ <div class="cal">${'SMTWTFS'.split('').map(x=>`<div class="h">${x}</div>`).join('')}${cells}</div></div>
+ <div class="row" style="margin:12px 0"><b>${SEL}</b><button onclick="openForm()">+ Add trade #${day.length+1}</button></div>
+ ${day.length?`<div class="row"><div class="card st"><span class="mute">Trades today</span><b>${day.length}</b></div><div class="card st"><span class="mute">Wins / Losses</span><b>${day.filter(t=>pnl(t)>0).length} / ${day.filter(t=>pnl(t)<0).length}</b></div><div class="card st"><span class="mute">Day P&amp;L</span><b class="${dp>=0?'win':'loss'}">${money(dp)}</b></div></div>`:'<p class="mute">No trades on this day. Tap “Add trade” to log one.</p>'}
+ ${day.map((t,i)=>card(t,i+1)).join('')}</div>`}
+
+function card(t,n){const p=pnl(t);return `<div class="card"><div class="row"><div><div class="mute b" style="color:var(--blue)">Trade #${n}</div><div class="b" style="font-size:17px">${E(t.pair)}</div><div class="mute">${E(t.dir)} • ${E(t.result)}</div></div><div class="b ${p>=0?'win':'loss'}" style="text-align:right;font-size:18px">${money(p)}</div></div>
+ <div class="mute" style="margin-top:6px">Lot ${E(t.lot)||'-'}   SL ${E(t.sl)||'-'}   TP ${E(t.tp)||'-'}</div><div class="mute">Balance ${money(t.before)} → ${money(t.after)}</div>
+ ${t.strat?`<div>Strategy: ${E(t.strat)}</div>`:''}${t.reason?`<div>Reason: ${E(t.reason)}</div>`:''}
+ <div class="hl" style="background:var(--lossbg);color:var(--loss)"><b>Mistake</b><span style="color:var(--tx)">${E(t.mistake)||'Nothing noted'}</span></div>
+ <div class="hl" style="background:var(--bluebg);color:var(--blue)"><b>Advice</b><span style="color:var(--tx)">${E(t.advice)||'Nothing noted'}</span></div>
+ ${t.shots.length?`<div class="imgs">${t.shots.map(s=>`<img src="${s}" onclick="zoomImg(this.src)">`).join('')}</div>`:''}
+ <button class="t" onclick="openForm('${t.id}')">Edit</button><button class="t loss" onclick="del('${t.id}')">Delete</button></div>`}
+function zoomImg(s){$('#zoom img').src=s;$('#zoom').style.display='flex'}
+function del(id){if(confirm('Delete this trade?'))col().doc(id).delete().catch(e=>alert(e.message))}
+
+function openForm(id){
+ const t=T.find(x=>x.id===id),prev=T.filter(x=>x.date<=SEL).sort((a,b)=>a.date<b.date?-1:1).pop();
+ F=t?{...t,shots:[...t.shots]}:{id:crypto.randomUUID(),date:SEL,pair:'',dir:'Buy',result:'Win',lot:'',sl:'',tp:'',strat:'',before:prev?prev.after:'',after:'',reason:'',mistake:'',advice:'',shots:[]};
+ $('#ov').style.display='block';F.isNew=!t;drawForm()}
+function chips(k,o){return `<div class="chips">${o.map(x=>`<button class="${F[k]===x?'on':''}" onclick="F.${k}='${x}';sync();drawForm()">${x}</button>`).join('')}</div>`}
+function inp(k,l,ty='text'){return `<input id="f_${k}" type="${ty}" ${ty==='number'?'step="any" inputmode="decimal"':''} placeholder="${l}" value="${E(F[k])}">`}
+function ta(k,l){return `<textarea id="f_${k}" rows="3" placeholder="${l}">${E(F[k])}</textarea>`}
+function sync(){['date','pair','lot','strat','sl','tp','before','after','reason','mistake','advice'].forEach(k=>{const e=$('#f_'+k);if(e)F[k]=e.value})}
+function drawForm(){
+ const p=(parseFloat(F.after)||0)-(parseFloat(F.before)||0);
+ $('#ov').innerHTML=`<div class="w"><h3>${F.isNew?'New':'Edit'} trade</h3>${inp('date','Date','date')}${inp('pair','Currency pair (e.g. EUR/USD)')}${chips('dir',['Buy','Sell'])}${chips('result',['Win','Loss','Breakeven'])}
+ <div class="row">${inp('lot','Lot size','number')}${inp('strat','Strategy')}</div><div class="row">${inp('sl','Risk (SL)')}${inp('tp','Reward (TP)')}</div>
+ <div class="row">${inp('before','Balance before','number')}${inp('after','Balance after','number')}</div>
+ <p class="b ${p>=0?'win':'loss'}">P&amp;L: ${money(p)}</p>${ta('reason','Reason for trade')}
+ <div class="hl" style="background:var(--lossbg);color:var(--loss)"><b>Mistake (important)</b>${ta('mistake','What went wrong?')}</div>
+ <div class="hl" style="background:var(--bluebg);color:var(--blue)"><b>Advice (important)</b>${ta('advice','What will I do next time?')}</div>
+ <p class="mute">Chart screenshots (max 4)</p><div class="imgs">${F.shots.map((s,i)=>`<div style="position:relative"><img src="${s}"><b onclick="sync();F.shots.splice(${i},1);drawForm()" style="position:absolute;right:0;top:0;background:#fff;color:#000;padding:2px 8px;border-radius:6px">×</b></div>`).join('')}
+ ${F.shots.length<4?`<button class="o" onclick="$('#sh').click()">+ Add</button>`:''}</div>
+ <input type="file" id="sh" accept="image/*" multiple hidden onchange="addShots(this.files)">
+ <div class="row" style="margin-top:14px"><button class="o" onclick="closeForm()">Cancel</button><button onclick="saveForm()">Save trade</button></div></div>`;
+ ['before','after'].forEach(k=>$('#f_'+k).oninput=()=>{sync();const q=(parseFloat(F.after)||0)-(parseFloat(F.before)||0),e=$('#ov p.b');e.className='b '+(q>=0?'win':'loss');e.textContent='P&L: '+money(q)})}
+function closeForm(){$('#ov').style.display='none'}
+function addShots(files){sync();[...files].slice(0,4-F.shots.length).forEach(f=>{const im=new Image();im.onload=()=>{const r=Math.min(1,800/im.width),c=document.createElement('canvas');c.width=im.width*r;c.height=im.height*r;c.getContext('2d').drawImage(im,0,0,c.width,c.height);F.shots.push(c.toDataURL('image/jpeg',.5));drawForm()};im.src=URL.createObjectURL(f)})}
+function saveForm(){sync();if(!F.pair.trim())return alert('Enter the currency pair');
+ const{isNew,...R}=F,t={...R,pair:F.pair.trim().toUpperCase(),before:parseFloat(F.before)||0,after:parseFloat(F.after)||0};
+ if(JSON.stringify(t).length>900000)return alert('Screenshots are too large. Remove one and try again.');
+ col().doc(t.id).set(t).catch(e=>alert('Save failed: '+e.message));
+ SEL=t.date;M=new Date(t.date+'T00:00');M.setDate(1);closeForm();home()}
+
+function backup(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(T)],{type:'application/json'}));a.download='trading-journal-backup.json';a.click()}
+$('#rf').onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(s=>{try{const l=JSON.parse(s);const bt=db.batch();l.forEach(x=>bt.set(col().doc(x.id),{shots:[],...x}));bt.commit().then(()=>alert('Restored '+l.length+' trades')).catch(x=>alert(x.message))}catch(x){alert('Invalid backup file')}});e.target.value=''};
+
+start();
+</script></body></html>
